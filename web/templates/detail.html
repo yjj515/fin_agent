@@ -1,0 +1,496 @@
+{% extends "base.html" %}
+
+{% block title %}运行详情 - {{ run_id }} - Fin-Agent{% endblock %}
+
+{% block extra_css %}
+<style>
+    .stat-card {
+        transition: transform 0.2s;
+    }
+    .stat-card:hover {
+        transform: translateY(-5px);
+    }
+    .chart-container {
+        position: relative;
+        height: 400px;
+        margin-bottom: 2rem;
+    }
+    .table-container {
+        max-height: 600px;
+        overflow-y: auto;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- 页面标题 -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb">
+                    <li class="breadcrumb-item"><a href="{{ url_for('index') }}">运行记录</a></li>
+                    <li class="breadcrumb-item active">{{ run_id }}</li>
+                </ol>
+            </nav>
+            <h1 class="display-5">
+                <i class="bi bi-file-earmark-bar-graph"></i> 运行详情分析
+            </h1>
+            <p class="text-muted" id="run-basic-info">加载中...</p>
+        </div>
+    </div>
+
+    <!-- 统计卡片 -->
+    <div class="row mb-4" id="stats-cards">
+        <div class="col-md-3 mb-3">
+            <div class="card stat-card border-primary">
+                <div class="card-body text-center">
+                    <h6 class="text-muted mb-2">总交易数</h6>
+                    <h2 class="mb-0" id="stat-total-trades">-</h2>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 mb-3">
+            <div class="card stat-card border-success">
+                <div class="card-body text-center">
+                    <h6 class="text-muted mb-2">胜率</h6>
+                    <h2 class="mb-0 text-success" id="stat-win-rate">-</h2>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 mb-3">
+            <div class="card stat-card border-info">
+                <div class="card-body text-center">
+                    <h6 class="text-muted mb-2">平均收益</h6>
+                    <h2 class="mb-0" id="stat-avg-return">-</h2>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 mb-3">
+            <div class="card stat-card border-warning">
+                <div class="card-body text-center">
+                    <h6 class="text-muted mb-2">平均Alpha</h6>
+                    <h2 class="mb-0" id="stat-avg-alpha">-</h2>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 图表区域 -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card shadow-sm">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0"><i class="bi bi-bar-chart"></i> 绩效分析图表</h5>
+                </div>
+                <div class="card-body">
+                    <div class="chart-container">
+                        <canvas id="performanceChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <div class="card shadow-sm">
+                <div class="card-header bg-success text-white">
+                    <h5 class="mb-0"><i class="bi bi-pie-chart"></i> 胜率分布</h5>
+                </div>
+                <div class="card-body">
+                    <div class="chart-container" style="height: 300px;">
+                        <canvas id="winRateChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card shadow-sm">
+                <div class="card-header bg-info text-white">
+                    <h5 class="mb-0"><i class="bi bi-graph-up"></i> 收益率分布</h5>
+                </div>
+                <div class="card-body">
+                    <div class="chart-container" style="height: 300px;">
+                        <canvas id="returnChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 绩效报告表格 -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card shadow-sm">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0"><i class="bi bi-table"></i> 绩效报告详情</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-container">
+                        <table class="table table-striped table-hover" id="performance-table">
+                            <thead class="table-dark">
+                                <tr>
+                                    <th>分类</th>
+                                    <th>周期</th>
+                                    <th>交易数</th>
+                                    <th>胜率</th>
+                                    <th>平均收益</th>
+                                    <th>平均Alpha</th>
+                                </tr>
+                            </thead>
+                            <tbody id="performance-tbody">
+                                <tr>
+                                    <td colspan="6" class="text-center">加载中...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 交易明细表格 -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card shadow-sm">
+                <div class="card-header bg-secondary text-white d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="bi bi-list-ul"></i> 交易明细</h5>
+                    <small>显示前100条记录</small>
+                </div>
+                <div class="card-body">
+                    <div class="table-container">
+                        <table class="table table-striped table-hover table-sm" id="trades-table">
+                            <thead class="table-dark">
+                                <tr>
+                                    <th>标的代码</th>
+                                    <th>标的名称</th>
+                                    <th>周期</th>
+                                    <th>情绪</th>
+                                    <th>入场日期</th>
+                                    <th>出场日期</th>
+                                    <th>退出原因</th>
+                                    <th>收益率</th>
+                                    <th>是否盈利</th>
+                                </tr>
+                            </thead>
+                            <tbody id="trades-tbody">
+                                <tr>
+                                    <td colspan="9" class="text-center">加载中...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const RUN_ID = '{{ run_id }}';
+const API_BASE = '/api/run/' + RUN_ID;
+
+// 加载运行摘要
+async function loadSummary() {
+    try {
+        const response = await fetch(API_BASE + '/summary');
+        if (!response.ok) {
+            console.error('Summary API error:', response.status, response.statusText);
+            document.getElementById('run-basic-info').innerHTML = 
+                `<span class="text-danger">加载失败: ${response.status} ${response.statusText}</span>`;
+            return;
+        }
+        const data = await response.json();
+        
+        if (data.username) {
+            document.getElementById('run-basic-info').innerHTML = 
+                `<strong>用户:</strong> ${data.username} | ` +
+                `<strong>运行时间:</strong> ${data.run_time || RUN_ID} | ` +
+                `<strong>总耗时:</strong> ${data.duration || '-'}`;
+        } else {
+            document.getElementById('run-basic-info').innerHTML = 
+                `<strong>运行ID:</strong> ${RUN_ID}`;
+        }
+    } catch (error) {
+        console.error('Error loading summary:', error);
+        document.getElementById('run-basic-info').innerHTML = 
+            `<span class="text-danger">加载错误: ${error.message}</span>`;
+    }
+}
+
+// 加载绩效数据
+async function loadPerformance() {
+    try {
+        const response = await fetch(API_BASE + '/performance');
+        if (!response.ok) {
+            console.error('Performance API error:', response.status, response.statusText);
+            document.getElementById('performance-tbody').innerHTML = 
+                '<tr><td colspan="6" class="text-center text-danger">加载失败: ' + response.status + ' ' + response.statusText + '</td></tr>';
+            return;
+        }
+        const data = await response.json();
+        
+        if (!Array.isArray(data)) {
+            console.error('Invalid data format:', data);
+            if (data.error) {
+                document.getElementById('performance-tbody').innerHTML = 
+                    '<tr><td colspan="6" class="text-center text-danger">错误: ' + data.error + '</td></tr>';
+            }
+            return;
+        }
+        
+        // 更新统计卡片
+        const totalRow = data.find(row => row.category === 'Total' && row.window === 'All');
+        if (totalRow) {
+            document.getElementById('stat-total-trades').textContent = totalRow.total_trades;
+            document.getElementById('stat-win-rate').textContent = totalRow.win_rate;
+            document.getElementById('stat-avg-return').textContent = totalRow.avg_return;
+            document.getElementById('stat-avg-alpha').textContent = totalRow.avg_alpha;
+        }
+        
+        // 更新表格
+        const tbody = document.getElementById('performance-tbody');
+        tbody.innerHTML = '';
+        data.forEach(row => {
+            const tr = document.createElement('tr');
+            let winRate = 0, avgReturn = 0;
+            try {
+                winRate = parseFloat(row.win_rate.replace('%', '')) || 0;
+                avgReturn = parseFloat(row.avg_return.replace('%', '')) || 0;
+            } catch (e) {
+                console.warn('Error parsing rates:', e);
+            }
+            
+            tr.innerHTML = `
+                <td>${row.category || '-'}</td>
+                <td>${row.window || '-'}</td>
+                <td>${row.total_trades || 0}</td>
+                <td class="${winRate >= 50 ? 'text-success' : 'text-danger'}"><strong>${row.win_rate || '0%'}</strong></td>
+                <td class="${avgReturn >= 0 ? 'text-success' : 'text-danger'}"><strong>${row.avg_return || '0%'}</strong></td>
+                <td>${row.avg_alpha || '0%'}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+        
+        if (data.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center">暂无数据</td></tr>';
+        }
+        
+        // 绘制图表
+        drawPerformanceChart(data);
+        drawWinRateChart(data);
+        
+    } catch (error) {
+        console.error('Error loading performance:', error);
+    }
+}
+
+// 绘制绩效图表
+function drawPerformanceChart(data) {
+    const ctx = document.getElementById('performanceChart').getContext('2d');
+    
+    // 筛选有效数据
+    const chartData = data.filter(row => 
+        row.window !== 'All' && 
+        row.category !== 'Total' &&
+        row.total_trades > 0
+    );
+    
+    const labels = chartData.map(row => `${row.category} - ${row.window}`);
+    const winRates = chartData.map(row => parseFloat(row.win_rate.replace('%', '')));
+    const avgReturns = chartData.map(row => parseFloat(row.avg_return.replace('%', '')));
+    
+    new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [
+                {
+                    label: '胜率 (%)',
+                    data: winRates,
+                    backgroundColor: 'rgba(54, 162, 235, 0.6)',
+                    borderColor: 'rgba(54, 162, 235, 1)',
+                    borderWidth: 1,
+                    yAxisID: 'y'
+                },
+                {
+                    label: '平均收益 (%)',
+                    data: avgReturns,
+                    backgroundColor: 'rgba(75, 192, 192, 0.6)',
+                    borderColor: 'rgba(75, 192, 192, 1)',
+                    borderWidth: 1,
+                    yAxisID: 'y1'
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    type: 'linear',
+                    display: true,
+                    position: 'left',
+                    title: { display: true, text: '胜率 (%)' }
+                },
+                y1: {
+                    type: 'linear',
+                    display: true,
+                    position: 'right',
+                    title: { display: true, text: '平均收益 (%)' },
+                    grid: { drawOnChartArea: false }
+                }
+            }
+        }
+    });
+}
+
+// 绘制胜率饼图
+function drawWinRateChart(data) {
+    const ctx = document.getElementById('winRateChart').getContext('2d');
+    
+    const chartData = data.filter(row => 
+        row.window !== 'All' && 
+        row.category !== 'Total' &&
+        row.total_trades > 0
+    );
+    
+    const labels = chartData.map(row => `${row.category} - ${row.window}`);
+    const winRates = chartData.map(row => parseFloat(row.win_rate.replace('%', '')));
+    
+    new Chart(ctx, {
+        type: 'pie',
+        data: {
+            labels: labels,
+            datasets: [{
+                data: winRates,
+                backgroundColor: [
+                    'rgba(255, 99, 132, 0.6)',
+                    'rgba(54, 162, 235, 0.6)',
+                    'rgba(255, 206, 86, 0.6)',
+                    'rgba(75, 192, 192, 0.6)',
+                    'rgba(153, 102, 255, 0.6)',
+                    'rgba(255, 159, 64, 0.6)'
+                ]
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false
+        }
+    });
+}
+
+// 绘制收益率分布图
+async function drawReturnChart() {
+    try {
+        const response = await fetch(API_BASE + '/trades');
+        if (!response.ok) {
+            console.error('Trades API error:', response.status, response.statusText);
+            document.getElementById('trades-tbody').innerHTML = 
+                '<tr><td colspan="9" class="text-center text-danger">加载失败: ' + response.status + ' ' + response.statusText + '</td></tr>';
+            return;
+        }
+        const data = await response.json();
+        
+        if (!Array.isArray(data)) {
+            console.error('Invalid data format:', data);
+            if (data.error) {
+                document.getElementById('trades-tbody').innerHTML = 
+                    '<tr><td colspan="9" class="text-center text-danger">错误: ' + data.error + '</td></tr>';
+            }
+            return;
+        }
+        
+        if (data.length === 0) {
+            document.getElementById('trades-tbody').innerHTML = 
+                '<tr><td colspan="9" class="text-center">暂无交易数据</td></tr>';
+            return;
+        }
+        
+        const returns = data.map(trade => parseFloat(trade.return) * 100).filter(r => !isNaN(r));
+        
+        const ctx = document.getElementById('returnChart').getContext('2d');
+        
+        // 计算分布区间
+        const bins = 20;
+        const min = Math.min(...returns);
+        const max = Math.max(...returns);
+        const binWidth = (max - min) / bins;
+        const histogram = new Array(bins).fill(0);
+        
+        returns.forEach(r => {
+            const binIndex = Math.min(Math.floor((r - min) / binWidth), bins - 1);
+            histogram[binIndex]++;
+        });
+        
+        const binLabels = Array.from({length: bins}, (_, i) => 
+            (min + i * binWidth).toFixed(1) + '%'
+        );
+        
+        new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: binLabels,
+                datasets: [{
+                    label: '交易数量',
+                    data: histogram,
+                    backgroundColor: 'rgba(75, 192, 192, 0.6)',
+                    borderColor: 'rgba(75, 192, 192, 1)',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        title: { display: true, text: '交易数量' }
+                    },
+                    x: {
+                        title: { display: true, text: '收益率 (%)' }
+                    }
+                }
+            }
+        });
+        
+        // 更新交易明细表格
+        const tbody = document.getElementById('trades-tbody');
+        tbody.innerHTML = '';
+        data.slice(0, 100).forEach(trade => {
+            const tr = document.createElement('tr');
+            const returnPct = (parseFloat(trade.return || 0) * 100).toFixed(2);
+            const isWin = trade.is_win === 'True' || trade.is_win === true;
+            
+            tr.innerHTML = `
+                <td>${trade.ticker || '-'}</td>
+                <td>${trade.ticker_name || '-'}</td>
+                <td>${trade.window_name || '-'}</td>
+                <td>${trade.sentiment || '-'}</td>
+                <td>${trade.entry_date || '-'}</td>
+                <td>${trade.exit_date || '-'}</td>
+                <td>${trade.reason || '-'}</td>
+                <td class="${isWin ? 'text-success' : 'text-danger'}"><strong>${returnPct}%</strong></td>
+                <td><span class="badge bg-${isWin ? 'success' : 'danger'}">${isWin ? '盈利' : '亏损'}</span></td>
+            `;
+            tbody.appendChild(tr);
+        });
+        
+    } catch (error) {
+        console.error('Error loading trades:', error);
+    }
+}
+
+// 页面加载时执行
+document.addEventListener('DOMContentLoaded', function() {
+    loadSummary();
+    loadPerformance();
+    drawReturnChart();
+});
+</script>
+{% endblock %}

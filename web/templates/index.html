@@ -1,0 +1,249 @@
+{% extends "base.html" %}
+
+{% block title %}运行记录列表 - Fin-Agent{% endblock %}
+
+{% block extra_css %}
+<style>
+    .search-container {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border-radius: 10px;
+        padding: 2rem;
+        margin-bottom: 2rem;
+        color: white;
+    }
+    .search-box {
+        max-width: 600px;
+        margin: 0 auto;
+    }
+    .loading-spinner {
+        display: none;
+    }
+    .loading-spinner.active {
+        display: inline-block;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- 搜索框区域 -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="search-container">
+                <div class="text-center mb-3">
+                    <h3 class="text-white mb-2">
+                        <i class="bi bi-search"></i> 搜索用户分析记录
+                    </h3>
+                    <p class="text-white-50 mb-0">输入雪球网用户名，查看该用户的分析结果</p>
+                </div>
+                <div class="search-box">
+                    <div class="input-group input-group-lg">
+                        <span class="input-group-text bg-white">
+                            <i class="bi bi-person-circle"></i>
+                        </span>
+                        <input type="text" 
+                               class="form-control" 
+                               id="username-input" 
+                               placeholder="请输入雪球网用户名，例如：慢跑者397"
+                               autocomplete="off">
+                        <button class="btn btn-light" type="button" id="search-btn">
+                            <span class="spinner-border spinner-border-sm loading-spinner" role="status" aria-hidden="true"></span>
+                            <span id="search-btn-text">搜索</span>
+                        </button>
+                    </div>
+                    <div id="search-error" class="alert alert-danger mt-3 mb-0" style="display: none;">
+                        <i class="bi bi-exclamation-triangle"></i> <span id="error-message"></span>
+                    </div>
+                    <div class="text-center mt-3">
+                        <button class="btn btn-link text-white" type="button" id="show-all-btn" style="text-decoration: none;">
+                            <i class="bi bi-list-ul"></i> 显示所有记录
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 结果显示区域 -->
+    <div class="row mb-4" id="results-header" style="display: none;">
+        <div class="col-12">
+            <h2 class="h4">
+                <i class="bi bi-list-check"></i> <span id="results-title">运行记录</span>
+            </h2>
+            <p class="text-muted" id="results-subtitle">查看所有分析运行的记录和结果</p>
+        </div>
+    </div>
+
+    <div id="runs-display">
+        <div class="alert alert-info text-center">
+            <i class="bi bi-info-circle"></i> 请在搜索框输入用户名进行查询，或点击"显示所有记录"查看全部记录。
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// 全局变量
+let allRuns = {{ runs | tojson }};
+
+// 页面加载完成
+document.addEventListener('DOMContentLoaded', function() {
+    const usernameInput = document.getElementById('username-input');
+    const searchBtn = document.getElementById('search-btn');
+    const showAllBtn = document.getElementById('show-all-btn');
+    const searchError = document.getElementById('search-error');
+    const runsDisplay = document.getElementById('runs-display');
+    const resultsHeader = document.getElementById('results-header');
+    
+    // 如果有初始数据，隐藏提示
+    {% if runs %}
+    resultsHeader.style.display = 'block';
+    {% endif %}
+    
+    // 搜索按钮点击事件
+    searchBtn.addEventListener('click', function() {
+        performSearch();
+    });
+    
+    // 回车键搜索
+    usernameInput.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            performSearch();
+        }
+    });
+    
+    // 显示所有记录
+    showAllBtn.addEventListener('click', function() {
+        displayRuns(allRuns, '所有运行记录', '查看所有分析运行的记录和结果');
+        searchError.style.display = 'none';
+        usernameInput.value = '';
+    });
+    
+    // 执行搜索
+    async function performSearch() {
+        const username = usernameInput.value.trim();
+        
+        if (!username) {
+            showError('请输入用户名');
+            return;
+        }
+        
+        // 显示加载状态
+        searchBtn.disabled = true;
+        searchBtn.querySelector('.loading-spinner').classList.add('active');
+        document.getElementById('search-btn-text').textContent = '搜索中...';
+        searchError.style.display = 'none';
+        
+        try {
+            // 发送搜索请求（使用encodeURIComponent确保中文正确编码）
+            const encodedUsername = encodeURIComponent(username);
+            const response = await fetch(`/api/search/${encodedUsername}`);
+            
+            // 先读取响应内容
+            const data = await response.json();
+            
+            if (!response.ok) {
+                // 搜索失败（404或其他错误）
+                showError(data.error || `搜索失败: ${response.status} ${response.statusText}`);
+                runsDisplay.innerHTML = '';
+                resultsHeader.style.display = 'none';
+                return;
+            }
+            
+            // 搜索成功，显示结果
+            if (data.runs && data.runs.length > 0) {
+                displayRuns(data.runs, `"${data.username}" 的运行记录`, `找到 ${data.count} 条记录`);
+                searchError.style.display = 'none';
+            } else {
+                showError(data.error || `未找到用户 "${username}" 的运行记录`);
+                runsDisplay.innerHTML = '';
+                resultsHeader.style.display = 'none';
+            }
+        } catch (error) {
+            console.error('Search error:', error);
+            showError(`搜索出错: ${error.message}`);
+            runsDisplay.innerHTML = '';
+            resultsHeader.style.display = 'none';
+        } finally {
+            // 恢复按钮状态
+            searchBtn.disabled = false;
+            searchBtn.querySelector('.loading-spinner').classList.remove('active');
+            document.getElementById('search-btn-text').textContent = '搜索';
+        }
+    }
+    
+    // 显示错误信息
+    function showError(message) {
+        document.getElementById('error-message').textContent = message;
+        searchError.style.display = 'block';
+    }
+    
+    // 显示运行记录
+    function displayRuns(runs, title, subtitle) {
+        if (!runs || runs.length === 0) {
+            runsDisplay.innerHTML = '<div class="alert alert-warning"><i class="bi bi-exclamation-triangle"></i> 暂无运行记录。</div>';
+            resultsHeader.style.display = 'none';
+            return;
+        }
+        
+        // 更新标题
+        document.getElementById('results-title').textContent = title;
+        document.getElementById('results-subtitle').textContent = subtitle;
+        resultsHeader.style.display = 'block';
+        
+        // 生成HTML
+        let html = '<div class="row" id="runs-container">';
+        runs.forEach(run => {
+            const winRateClass = run.win_rate_class || 'danger';
+            const returnClass = run.avg_return_class || 'danger';
+            
+            html += `
+                <div class="col-md-6 col-lg-4 mb-4">
+                    <div class="card h-100 shadow-sm run-card">
+                        <div class="card-header bg-primary text-white">
+                            <h5 class="card-title mb-0">
+                                <i class="bi bi-person-circle"></i> ${run.username || '未知用户'}
+                            </h5>
+                        </div>
+                        <div class="card-body">
+                            <p class="text-muted small mb-2">
+                                <i class="bi bi-clock"></i> ${run.timestamp || ''}
+                            </p>
+                            ${run.total_trades ? `
+                            <div class="mb-3">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <span class="text-muted">交易次数:</span>
+                                    <strong>${run.total_trades}</strong>
+                                </div>
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <span class="text-muted">胜率:</span>
+                                    <strong class="text-${winRateClass}">${run.win_rate || '0%'}</strong>
+                                </div>
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <span class="text-muted">平均收益:</span>
+                                    <strong class="text-${returnClass}">${run.avg_return || '0%'}</strong>
+                                </div>
+                            </div>
+                            ` : `
+                            <div class="alert alert-info mb-0">
+                                <small>数据加载中...</small>
+                            </div>
+                            `}
+                        </div>
+                        <div class="card-footer bg-transparent">
+                            <a href="/run/${encodeURIComponent(run.id)}" class="btn btn-primary btn-sm w-100">
+                                <i class="bi bi-eye"></i> 查看详情
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            `;
+        });
+        html += '</div>';
+        
+        runsDisplay.innerHTML = html;
+    }
+});
+</script>
+{% endblock %}
