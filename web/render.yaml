@@ -1,0 +1,16 @@
+# Render.com 配置文件
+# 使用此文件可以自动配置Render服务
+
+services:
+  - type: web
+    name: fin-agent-web
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.7
+      - key: FLASK_ENV
+        value: production
+    # 如果上传了整个项目，取消下面的注释
+    # rootDir: web
